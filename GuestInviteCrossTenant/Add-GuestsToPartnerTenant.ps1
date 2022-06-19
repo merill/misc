@@ -30,51 +30,88 @@
 [CmdletBinding()]
 param (
     # The Group ID in the host tenant that contains the users that need to be added to the partner tenant.
-    $HomeTenantGroupId,
+    [Parameter(Mandatory = $true)]
+    [string] $HomeTenantGroupId,
+
     # The tenant to which the guests will be added to. 
-    $PartnerTenantId
+    [Parameter(Mandatory = $true)]
+    [string] $PartnerTenantId
 )
+
+function GetGroupCacheFilePath($groupId){
+    return ".\cache\delta-query-group-$groupId.txt"
+}
 
 # Uses the delta query if a next link
 function GetGroupNextLink($groupId){
-    $fileName = ".\cache\delta-query-group-$groupId.txt";
+    $fileName = GetGroupCacheFilePath($groupId)
+
     if(Test-Path -Path $fileName -PathType Leaf){
+        Write-Verbose "Getting delta list of users using cache data at $fileName"
         return Get-Content $fileName
     }
     else {
+        Write-Debug "No cache found at $fileName"
         return $null
     }
 }
 
+function SaveGroupNextLink($groupId, $nextLink){
+    if($null -eq $nextLink -or $nextLink.Length -eq 0){
+        Write-Verbose "Invalid nextLink, not saving to cache"
+    }
+    else{
+        $fileName = GetGroupCacheFilePath($groupId)
+        Write-Verbose "Saving nextLink at $fileName"
+    
+        New-Item -Path $fileName -ItemType File -Value $nextLink -Force | Out-Null    
+    }
+}
+
 function GetGuestUsers($groupId){
+    Write-Verbose "`n`nGetting list of users from group $groupId ---------------"
     $graphQuery = GetGroupNextLink($groupId)
 
     if($null -eq $graphQuery){ # first time run
         $graphQuery = "https://graph.microsoft.com/v1.0/groups/delta?`$filter=+id+eq+'{0}'" -f $groupId
+        Write-Verbose "Getting full list of users with`n$graphQuery"
     }
 
-    $graphResult = Invoke-GraphRequest -Method GET -Uri $graphQuery
     $members = @()
-    while($graphResult.Value.Length -gt 0){
-        $members += $graphResult.Value.'members@delta'
-
-        $graphQuery = $graphResult.'@odata.nextLink'
+    $hasData = $true
+    
+    while($hasData){
         $graphResult = Invoke-GraphRequest -Method GET -Uri $graphQuery
+
+        if($null -ne $graphResult.Value -and $graphResult.Value.'members@delta'.Length -gt 0){
+            $members += $graphResult.Value.'members@delta'
+            Write-Verbose "Found $($members.Length) members, checking for more guests"
+        }
+        $hasData = $null -ne $graphResult.'@odata.nextLink' # is there another page of data?
+        if($hasData){
+            $graphQuery = $graphResult.'@odata.nextLink'
+        }
     }
-    return $graphResult.'@odata.nextLink', $members
+    
+    $deltaLink = $graphResult.'@odata.deltaLink' # Get the delta link for the  next query
+    Write-Debug "DeltaLink"
+    Write-Debug $deltaLink
+    return $deltaLink, $members
 }
 
 function GetUserDetails($members){
+    Write-Verbose "Getting user information for $($members.Length) guests"
     $usersToAdd = @()
     $usersToRemove = @()
     foreach ($member in $members) {
-        if($member.'@removed'.reason -eq 'deleted'){
+        if($null -ne $member.'@removed'){
             $userProps = @{
                 Id = $member.id
             }
             $usersToRemove += $userProps
         }
         else{
+            Write-Verbose "Getting user information for user $($member.Id)"
             $user = Get-MgUser -UserId $member.Id -Property Id, UserPrincipalName, Mail, DisplayName, GivenName, Surname
             $userProps = [ordered]@{
                 Id = $user.Id
@@ -90,27 +127,48 @@ function GetUserDetails($members){
     return $usersToAdd, $usersToRemove
 }
 
+function InviteUsers($usersToAdd, $inviteRedirectUrl){
+    Write-Information "`n`nInviting $($usersToAdd.Length) users---------------"
+    foreach($user in $usersToAdd){
+        Write-Verbose "Inviting user $($user.Mail)"
+        New-MgInvitation `
+            -InvitedUserEmailAddress $user.Mail `
+            -InvitedUserDisplayName $user.DisplayName `
+            -InviteRedirectUrl $inviteRedirectUrl `
+            -SendInvitationMessage:$false | Out-Null
+    }
+}
+
+$ErrorActionPreference = "Stop"
+
 Import-Module Microsoft.Graph.Users
 Import-Module Microsoft.Graph.Authentication
 
-Connect-MgGraph -Scopes GroupMember.Read.All # Connect to the logged in user's home tenant
+Write-Host "Connecting to Home Tenant to get list of users to invite as guest"
+Connect-MgGraph -Scopes GroupMember.Read.All | Out-Null # Connect to the logged in user's home tenant
 $logFolder = ".\Logs\" + $((Get-Date).ToString("yyyyMMdd-HHmmss"))
-New-Item -Path $logFolder -ItemType Directory
+New-Item -Path $logFolder -ItemType Directory | Out-Null
 
-$nextLink, $members = GetGuestUsers($HomeTenantGroupId)
-$usersToAdd, $usersToRemove = GetUserDetails($members)
+Write-Host "Getting list of guests to invite"
+$nextLink, $members = GetGuestUsers -groupId $HomeTenantGroupId
+$usersToAdd, $usersToRemove = GetUserDetails -members $members
 
+$userCount = 0
+if($null -ne $usersToAdd) { $userCount = $usersToAdd.Length }
+Write-Host "Found $userCount users to invite"
+
+Write-Host "Exporting log of guests to be invited to $logFolder"
 $usersToAdd | Export-Csv -Path (Join-Path $logFolder -ChildPath "UsersAdd.csv")
 $usersToRemove | Export-Csv -Path (Join-Path $logFolder -ChildPath "UsersRemove.csv")
 
-Connect-MgGraph -TenantId $PartnerTenantId -Scopes User.Invite.All
-$InviteRedirectUrl = "https://myapps.microsoft.com?tenantId=$PartnerTenantId"
-
-foreach($user in $usersToAdd){
-    New-MgInvitation `
-        -InvitedUserEmailAddress $user.Mail `
-        -InvitedUserDisplayName $user.DisplayName `
-        -InviteRedirectUrl $InviteRedirectUrl `
-        -SendInvitationMessage:$false `
+if($usersToAdd.Length -gt 0){
+    Write-Host "Connecting to Partner Tenant $PartnerTenantId to perform invites"
+    Connect-MgGraph -TenantId $PartnerTenantId -Scopes User.Invite.All | Out-Null
+    $inviteRedirectUrl = "https://myapps.microsoft.com?tenantId=$PartnerTenantId"
+    
+    Write-Host "Inviting users"
+    InviteUsers -usersToAdd $usersToAdd -inviteRedirectUrl $inviteRedirectUrl
 }
 
+Write-Host "Saving cache"
+SaveGroupNextLink -groupId $HomeTenantGroupId -nextLink $nextLink
