@@ -111,7 +111,7 @@ function GetUserDetails($members){
             $usersToRemove += $userProps
         }
         else{
-            Write-Verbose "Getting user information for user $($member.Id)"
+            Write-Host "  Getting user information for user $($member.Id)"
             $user = Get-MgUser -UserId $member.Id -Property Id, UserPrincipalName, Mail, DisplayName, GivenName, Surname
             $userProps = [ordered]@{
                 Id = $user.Id
@@ -130,7 +130,7 @@ function GetUserDetails($members){
 function InviteUsers($usersToAdd, $inviteRedirectUrl){
     Write-Information "`n`nInviting $($usersToAdd.Length) users---------------"
     foreach($user in $usersToAdd){
-        Write-Verbose "Inviting user $($user.Mail)"
+        Write-Host "  Inviting user $($user.Mail)"
         New-MgInvitation `
             -InvitedUserEmailAddress $user.Mail `
             -InvitedUserDisplayName $user.DisplayName `
