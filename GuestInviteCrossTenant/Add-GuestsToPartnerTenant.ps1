@@ -146,7 +146,7 @@ Import-Module Microsoft.Graph.Authentication
 Import-Module Microsoft.Graph.Identity.SignIns
 
 Write-Host "Connecting to Home Tenant to get list of users to invite as guest"
-Connect-MgGraph -Scopes GroupMember.Read.All | Out-Null # Connect to the logged in user's home tenant
+Connect-MgGraph -Scopes GroupMember.Read.All, User.Read.All | Out-Null # Connect to the logged in user's home tenant
 $logFolder = ".\Logs\" + $((Get-Date).ToString("yyyyMMdd-HHmmss"))
 New-Item -Path $logFolder -ItemType Directory | Out-Null
 
