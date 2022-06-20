@@ -17,6 +17,11 @@
 
   To run a full query instead of the delta, delete the corresponding group file in the ./cache/ folder.
 
+  Pre-requisite: Install the two required Graph PowerShell modules listed below.
+  * Install-Module Microsoft.Graph.Users
+  * Install-Module Microsoft.Graph.Authentication
+  * Install-Module Microsoft.Graph.Identity.SignIns
+
   .EXAMPLE
   PS> ./Add-GuestsToPartnerTenant.ps1 -HomeTenantGroupId 0ef1962b-d394-45ef-8ae4-6651324de24f -PartnerTenantId 1852b10f-a011-428b-98f9-d09c37d477cf
 
@@ -138,6 +143,7 @@ $ErrorActionPreference = "Stop"
 
 Import-Module Microsoft.Graph.Users
 Import-Module Microsoft.Graph.Authentication
+Import-Module Microsoft.Graph.Identity.SignIns
 
 Write-Host "Connecting to Home Tenant to get list of users to invite as guest"
 Connect-MgGraph -Scopes GroupMember.Read.All | Out-Null # Connect to the logged in user's home tenant
