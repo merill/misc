@@ -18,13 +18,8 @@
   To run a full query instead of the delta, delete the corresponding group file in the ./cache/ folder.
 
   .EXAMPLE
-  PS> .\Update-Month.ps1
+  PS> ./Add-GuestsToPartnerTenant.ps1 -HomeTenantGroupId 0ef1962b-d394-45ef-8ae4-6651324de24f -PartnerTenantId 1852b10f-a011-428b-98f9-d09c37d477cf
 
-  .EXAMPLE
-  PS> .\Update-Month.ps1 -inputpath C:\Data\January.csv
-
-  .EXAMPLE
-  PS> .\Update-Month.ps1 -inputpath C:\Data\January.csv -outputPath C:\Reports\2009\January.csv
 #>
 
 [CmdletBinding()]
