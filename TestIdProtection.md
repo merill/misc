@@ -7,3 +7,6 @@ Password: Ethanol-Wisplike-Filing9
 
 App ID: 56a89db1-6ed2-4171-88f6-b4f7597dbce3
 Secret: dzl8Q~J3mke7rtGmZpgjFmtbce0L9hgxncjA3bda
+
+Username: merill@merill.onmicrosoft.com
+Password: Lyrics-Stock3-Praying
